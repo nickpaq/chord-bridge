@@ -1,7 +1,7 @@
 # Chord Bridge
 
 Open Chord Bridge.html in a desktop browser. No server, installation or internet required.
-Select multiple Cthulhu .fxp files, choose a pad layout and velocity, then click Convert & download ZIP. Extract the ZIP and import its .chrd files into ChordPolyPad. Output filenames match input filenames with .fxp replaced by .chrd. One input produces one output. Duplicate filenames are stored in separate duplicate-N folders, preserving their basenames. Any unsupported file or conversion error blocks the entire batch; no partial ZIP is downloaded.
+Select multiple Cthulhu .fxp files, choose a pad layout and velocity, then click Convert & download ZIP. Extract the ZIP and import its .chrd files into ChordPolyPad. Output filenames match input filenames with .fxp replaced by .chrd. Each valid input produces one output. Duplicate filenames are stored in separate duplicate-N folders, preserving their basenames. Unsupported files and conversion failures are skipped and listed with their errors. Valid files still download as a ZIP, with a total of exported and skipped files.
 
 Supports the 8312-byte Cthulhu chord chunk layout identified by Nr8v, based on the supplied ADSR OVO CP001 C.fxp sample. Stores eight voice lanes across 128 trigger keys; nonzero note values are interpreted as MIDI note / 128. Zero represents an empty voice. Other layouts are rejected. The legacy outer FXP byteSize field in the sample is stale; the actual chunk size is validated instead.
 
