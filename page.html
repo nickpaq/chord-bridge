@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chord Bridge · Cthulhu to ChordPolyPad</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#eff3f8;background:#11151c;color-scheme:dark}*{box-sizing:border-box}body{max-width:960px;margin:0 auto;padding:44px 22px}header{margin-bottom:32px}.eyebrow{color:#a7e9bc;font-size:12px;letter-spacing:2px}h1{font-size:clamp(32px,6vw,52px);letter-spacing:-2px;margin:12px 0}p{color:#acb8c9;line-height:1.6}.panel{background:#1b222e;border:1px solid #344052;border-radius:18px;padding:24px;margin:20px 0}.upload{display:block;border:1px dashed #758ba5;padding:30px;border-radius:12px;background:#141b25}.upload strong{display:block;margin-bottom:14px}input,select,button{font:inherit}input[type=file]{max-width:100%}.options{display:flex;gap:20px;flex-wrap:wrap;margin:24px 0}label span{display:block;margin-bottom:8px;font-size:14px}input[type=text],input[type=number],select{background:#111923;color:#fff;border:1px solid #64738a;border-radius:8px;padding:11px;max-width:100%;width:100%}.options label:first-child{flex:1;min-width:180px}button{background:#b3f5c6;color:#102318;border:0;border-radius:9px;padding:13px 22px;font-weight:700;cursor:pointer}button:disabled{opacity:.4;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #8fbaff;outline-offset:4px}.status{color:#b3f5c6}#error{color:#ffb9b9}table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:12px;border-bottom:1px solid #344052}th{color:#acb8c9}.table{overflow:auto;max-height:440px}small{color:#acb8c9;line-height:1.6;display:block}footer{font-size:13px;color:#acb8c9;margin-top:30px}[hidden]{display:none!important}
+</style>
+<header><div class="eyebrow">A SMALL TOOL FOR BIG CHORDS</div><h1>Chord Bridge</h1><p>Cthulhu presets → ChordPolyPad pads.<br>Select a batch of presets and download identically named <b>.chrd</b> files in a ZIP.</p></header>
+<main><section class="panel" aria-label="Convert preset"><label class="upload"><strong>Choose Cthulhu presets</strong><input id="file" type="file" accept=".fxp" multiple><small>Files stay in this browser. No uploads, accounts, or installation.</small></label>
+<p id="error" role="alert"></p><p id="status" class="status" role="status">Waiting for .fxp files</p>
+<div class="options"><label><span>Pad layout</span><select id="layout"><option value="packed">Pack chords from pad 1</option><option value="keys">Keep MIDI key positions (key 0 → pad 1)</option></select></label><label><span>Note velocity (1–127)</span><input id="velocity" type="number" min="1" max="127" step="1" value="100" style="width:100px"></label></div>
+<button id="download" disabled>Convert & download ZIP</button><p><small>Exports chord notes with your chosen velocity. Arpeggiator, modulation, and Cthulhu velocity settings are not transferred. Note names use C4 = MIDI 60.</small></p></section>
+<section id="batch" class="panel" hidden><h2>Batch files</h2><p>One input file → one output preset. Names are preserved; only .fxp changes to .chrd. Duplicate names use separate folders. Any error blocks the whole batch.</p><div class="table"><table><thead><tr><th>Output filename</th><th>Result</th></tr></thead><tbody id="batchRows"></tbody></table></div></section>
+<section id="preview" class="panel" hidden><h2>Chord preview</h2><p id="summary"></p><div class="table"><table><thead><tr><th>Pad</th><th>Trigger key</th><th>Notes</th><th>MIDI notes</th></tr></thead><tbody id="rows"></tbody></table></div></section>
+<section class="panel"><h2>Import into ChordPolyPad</h2><p>Save the downloaded .chrd file, then open or share it into ChordPolyPad using your device’s file browser.</p><small>Experimental converter based on the supplied Cthulhu preset and ChordPolyPad template. Supports the matching 8,312-byte Cthulhu chord chunk layout. Other layouts are rejected and block the batch. Confirm the first chord and pad order in ChordPolyPad before relying on a converted preset.</small></section></main><footer>Works offline · No external libraries · Your original files are unchanged</footer>
+<script>
+/* CORE */
+</script><script>
+let parsed=null;
+const el=id=>document.getElementById(id);
+function preview(){if(!parsed)return;el('rows').replaceChildren();parsed.chords.forEach((c,i)=>{const tr=document.createElement('tr');[el('layout').value==='keys'?c.key+1:i+1,`${noteName(c.key)} (${c.key})`,c.notes.map(noteName).join(' · '),c.notes.join(', ')].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.append(td);});el('rows').append(tr);});}
+let batch=[], busy=false;
+function save(data,name,type){const url=URL.createObjectURL(new Blob([data],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}
+function batchRow(name,status){const tr=document.createElement('tr');for(const text of [name,status]){const td=document.createElement('td');td.textContent=text;tr.append(td);}el('batchRows').append(tr);return tr.lastChild;}
+el('file').addEventListener('change',async()=>{
+ if(busy)return;busy=true;el('file').disabled=true;batch=[];parsed=null;el('download').disabled=true;el('preview').hidden=true;el('error').textContent='';el('batchRows').replaceChildren();el('batch').hidden=false;
+ const files=Array.from(el('file').files);let failed=0;const names=new Map();
+ for(let i=0;i<files.length;i++){
+  const file=files[i],name=file.name.replace(/\.fxp$/i,'')+'.chrd',cell=batchRow(name,'Reading…');
+  el('status').textContent=`Reading ${i+1} of ${files.length}…`;
+  try{
+   if(!/\.fxp$/i.test(file.name))throw Error('Expected a .fxp file.');
+   if(file.size>2e6)throw Error('File too large for supported format.');
+   
+   const result=parsePreset(await file.arrayBuffer());const occurrence=(names.get(name.toLowerCase())||0)+1;names.set(name.toLowerCase(),occurrence);const outputName=occurrence===1?name:`duplicate-${occurrence}/${name}`;batch.push({name:outputName,presetName:file.name.replace(/\.fxp$/i,''),parsed:result,cell});cell.previousSibling.textContent=outputName;cell.textContent=`${result.chords.length} chords · ready`;
+   if(!parsed)parsed=result;
+  }catch(e){failed++;cell.textContent='Error: '+e.message;}
+  if(i%10===0)await new Promise(r=>setTimeout(r,0));
+ }
+ if(parsed){preview();el('preview').hidden=false;el('summary').textContent=`Preview: ${batch[0].name} · ${parsed.chords.length} chords`;}
+ el('status').textContent=failed?`Batch blocked: ${failed} file errors. Select a supported set to export every file.`:`${batch.length} inputs → ${batch.length} .chrd presets`;if(failed)batch=[];el('download').disabled=!batch.length;el('file').disabled=false;busy=false;
+});
+el('layout').addEventListener('change',preview);
+el('download').addEventListener('click',async()=>{
+ if(busy||!batch.length)return;if(!el('velocity').reportValidity())return;
+ busy=true;el('download').disabled=true;el('file').disabled=true;el('layout').disabled=true;el('velocity').disabled=true;el('error').textContent='';
+ try{
+  const outputs=[],layout=el('layout').value,velocity=Number(el('velocity').value);let failed=0;
+  for(let i=0;i<batch.length;i++){
+   const item=batch[i];el('status').textContent=`Converting ${i+1} of ${batch.length}…`;
+   try{outputs.push({name:item.name,data:convertPreset(item.parsed,item.presetName,layout,velocity)});item.cell.textContent='Converted';}catch(e){failed++;item.cell.textContent='Failed: '+e.message;}
+   if(i%10===0)await new Promise(r=>setTimeout(r,0));
+  }
+  if(failed||outputs.length!==batch.length)throw Error('Batch blocked: not every input could be converted. No partial ZIP was downloaded.');
+  if(outputs.length){save(makeZip(outputs),'ChordPolyPad presets.zip','application/zip');el('status').textContent=`${outputs.length} presets exported · ${failed} conversion errors. Check the ZIP in Downloads.`;}
+  else throw Error('No presets could be exported.');
+ }catch(e){el('error').textContent=e.message;}finally{busy=false;el('download').disabled=!batch.length;el('file').disabled=false;el('layout').disabled=false;el('velocity').disabled=false;}
+});
+</script></html>
