@@ -7,20 +7,20 @@
 <p id="error" role="alert"></p><p id="status" class="status" role="status">Waiting for .fxp files</p>
 <div class="options"><label><span>Pad layout</span><select id="layout"><option value="packed">Pack chords from pad 1</option><option value="keys">Keep MIDI key positions (key 0 → pad 1)</option></select></label><label><span>Note velocity (1–127)</span><input id="velocity" type="number" min="1" max="127" step="1" value="100" style="width:100px"></label></div>
 <button id="download" disabled>Convert & download ZIP</button><p><small>Exports chord notes with your chosen velocity. Arpeggiator, modulation, and Cthulhu velocity settings are not transferred. Note names use C4 = MIDI 60.</small></p></section>
-<section id="batch" class="panel" hidden><h2>Batch files</h2><p>One input file → one output preset. Names are preserved; only .fxp changes to .chrd. Duplicate names use separate folders. Any error blocks the whole batch.</p><div class="table"><table><thead><tr><th>Output filename</th><th>Result</th></tr></thead><tbody id="batchRows"></tbody></table></div></section>
+<section id="batch" class="panel" hidden><h2>Batch files</h2><p>Each valid input file → one output preset. Names are preserved; only .fxp changes to .chrd. Duplicate names use separate folders. Problematic files are skipped; valid files still export.</p><div class="table"><table><thead><tr><th>Output filename</th><th>Result</th></tr></thead><tbody id="batchRows"></tbody></table></div></section>
 <section id="preview" class="panel" hidden><h2>Chord preview</h2><p id="summary"></p><div class="table"><table><thead><tr><th>Pad</th><th>Trigger key</th><th>Notes</th><th>MIDI notes</th></tr></thead><tbody id="rows"></tbody></table></div></section>
-<section class="panel"><h2>Import into ChordPolyPad</h2><p>Save the downloaded .chrd file, then open or share it into ChordPolyPad using your device’s file browser.</p><small>Experimental converter based on the supplied Cthulhu preset and ChordPolyPad template. Supports the matching 8,312-byte Cthulhu chord chunk layout. Other layouts are rejected and block the batch. Confirm the first chord and pad order in ChordPolyPad before relying on a converted preset.</small></section></main><footer>Works offline · No external libraries · Your original files are unchanged</footer>
+<section class="panel"><h2>Import into ChordPolyPad</h2><p>Save the downloaded .chrd file, then open or share it into ChordPolyPad using your device’s file browser.</p><small>Experimental converter based on the supplied Cthulhu preset and ChordPolyPad template. Supports the matching 8,312-byte Cthulhu chord chunk layout. Other layouts are skipped and listed with an error. Confirm the first chord and pad order in ChordPolyPad before relying on a converted preset.</small></section></main><footer>Works offline · No external libraries · Your original files are unchanged</footer>
 <script>
 /* CORE */
 </script><script>
 let parsed=null;
 const el=id=>document.getElementById(id);
 function preview(){if(!parsed)return;el('rows').replaceChildren();parsed.chords.forEach((c,i)=>{const tr=document.createElement('tr');[el('layout').value==='keys'?c.key+1:i+1,`${noteName(c.key)} (${c.key})`,c.notes.map(noteName).join(' · '),c.notes.join(', ')].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.append(td);});el('rows').append(tr);});}
-let batch=[], busy=false;
+let batch=[], busy=false, skippedInputs=0;
 function save(data,name,type){const url=URL.createObjectURL(new Blob([data],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}
 function batchRow(name,status){const tr=document.createElement('tr');for(const text of [name,status]){const td=document.createElement('td');td.textContent=text;tr.append(td);}el('batchRows').append(tr);return tr.lastChild;}
 el('file').addEventListener('change',async()=>{
- if(busy)return;busy=true;el('file').disabled=true;batch=[];parsed=null;el('download').disabled=true;el('preview').hidden=true;el('error').textContent='';el('batchRows').replaceChildren();el('batch').hidden=false;
+ if(busy)return;busy=true;el('file').disabled=true;batch=[];skippedInputs=0;parsed=null;el('download').disabled=true;el('preview').hidden=true;el('error').textContent='';el('batchRows').replaceChildren();el('batch').hidden=false;
  const files=Array.from(el('file').files);let failed=0;const names=new Map();
  for(let i=0;i<files.length;i++){
   const file=files[i],name=file.name.replace(/\.fxp$/i,'')+'.chrd',cell=batchRow(name,'Reading…');
@@ -31,11 +31,11 @@ el('file').addEventListener('change',async()=>{
    
    const result=parsePreset(await file.arrayBuffer());const occurrence=(names.get(name.toLowerCase())||0)+1;names.set(name.toLowerCase(),occurrence);const outputName=occurrence===1?name:`duplicate-${occurrence}/${name}`;batch.push({name:outputName,presetName:file.name.replace(/\.fxp$/i,''),parsed:result,cell});cell.previousSibling.textContent=outputName;cell.textContent=`${result.chords.length} chords · ready`;
    if(!parsed)parsed=result;
-  }catch(e){failed++;cell.textContent='Error: '+e.message;}
+  }catch(e){failed++;cell.textContent='Skipped: '+e.message;}
   if(i%10===0)await new Promise(r=>setTimeout(r,0));
  }
  if(parsed){preview();el('preview').hidden=false;el('summary').textContent=`Preview: ${batch[0].name} · ${parsed.chords.length} chords`;}
- el('status').textContent=failed?`Batch blocked: ${failed} file errors. Select a supported set to export every file.`:`${batch.length} inputs → ${batch.length} .chrd presets`;if(failed)batch=[];el('download').disabled=!batch.length;el('file').disabled=false;busy=false;
+ skippedInputs=failed;el('status').textContent=`${batch.length} ready · ${skippedInputs} skipped`;el('download').disabled=!batch.length;el('file').disabled=false;busy=false;
 });
 el('layout').addEventListener('change',preview);
 el('download').addEventListener('click',async()=>{
@@ -45,11 +45,10 @@ el('download').addEventListener('click',async()=>{
   const outputs=[],layout=el('layout').value,velocity=Number(el('velocity').value);let failed=0;
   for(let i=0;i<batch.length;i++){
    const item=batch[i];el('status').textContent=`Converting ${i+1} of ${batch.length}…`;
-   try{outputs.push({name:item.name,data:convertPreset(item.parsed,item.presetName,layout,velocity)});item.cell.textContent='Converted';}catch(e){failed++;item.cell.textContent='Failed: '+e.message;}
+   try{outputs.push({name:item.name,data:convertPreset(item.parsed,item.presetName,layout,velocity)});item.cell.textContent='Converted';}catch(e){failed++;item.cell.textContent='Skipped: '+e.message;}
    if(i%10===0)await new Promise(r=>setTimeout(r,0));
   }
-  if(failed||outputs.length!==batch.length)throw Error('Batch blocked: not every input could be converted. No partial ZIP was downloaded.');
-  if(outputs.length){save(makeZip(outputs),'ChordPolyPad presets.zip','application/zip');el('status').textContent=`${outputs.length} presets exported · ${failed} conversion errors. Check the ZIP in Downloads.`;}
+  if(outputs.length){save(makeZip(outputs),'ChordPolyPad presets.zip','application/zip');el('status').textContent=`${outputs.length} presets exported · ${skippedInputs+failed} skipped. Check the file list for details.`;}
   else throw Error('No presets could be exported.');
  }catch(e){el('error').textContent=e.message;}finally{busy=false;el('download').disabled=!batch.length;el('file').disabled=false;el('layout').disabled=false;el('velocity').disabled=false;}
 });
