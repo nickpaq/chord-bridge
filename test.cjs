@@ -1,0 +1,12 @@
+const fs=require('node:fs'),assert=require('node:assert/strict');
+const {parsePreset,convertPreset}=require('./core.js');
+const data=fs.readFileSync(process.argv[2]);const parsed=parsePreset(data);
+assert.equal(parsed.chords.length,48);assert.equal(parsed.chords[0].key,48);assert.deepEqual(parsed.chords[0].notes,[38,60,65,69]);
+assert.throws(()=>parsePreset(data.subarray(0,100)),/layout/);
+const wrong=Buffer.from(data);wrong.write('Fake',16);assert.throws(()=>parsePreset(wrong),/Cthulhu/);
+const nan=Buffer.from(data);nan.writeFloatLE(NaN,80);assert.throws(()=>parsePreset(nan),/note data/);
+const zero=Buffer.from(data);zero.fill(0,80,4176);assert.throws(()=>parsePreset(zero),/No assigned/);
+assert.throws(()=>convertPreset(parsed,'test','packed',0),/options/);
+for(const layout of ['packed','keys'])fs.writeFileSync(`${__dirname}/${layout}.chrd`,convertPreset(parsed,'Test ♯ 🎹',layout,100));
+fs.writeFileSync(`${__dirname}/ADSR OVO CP001 C.chrd`,convertPreset(parsed,'ADSR OVO CP001 C','packed',100));
+console.log('Parsing and rejection checks passed.');
